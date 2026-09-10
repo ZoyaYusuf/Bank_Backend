@@ -10,8 +10,11 @@ app = FastAPI(title='ARRA Interest Calculator API', version='0.1.0')
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
-    allow_credentials=True,
+    allow_origins=[
+        "http://localhost:5173",
+        "https://bank-frontend-kappa.vercel.app",
+    ],
+    allow_credentials=False,
     allow_methods=['*'],
     allow_headers=['*'],
 )
