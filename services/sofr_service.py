@@ -7,7 +7,11 @@ from typing import List
 
 import requests
 
-SOFR_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SOFR"
+NEW_YORK_FED_SOFR_URL = (
+    "https://markets.newyorkfed.org/api/rates/secured/sofr/search.json"
+    "?startDate={start}&endDate={end}&type=rate"
+)
+FRED_SOFR_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SOFR"
 
 
 def _parse_rate(raw_value: str | None) -> float | None:
@@ -23,10 +27,38 @@ def _parse_rate(raw_value: str | None) -> float | None:
 
 
 def fetch_historical_rates(start_date: date, end_date: date) -> List[dict]:
-    response = requests.get(SOFR_URL, timeout=30, headers={'User-Agent': 'ARRA/1.0'})
-    response.raise_for_status()
+    headers = {'User-Agent': 'ARRA/1.0'}
 
-    rows: List[dict] = []
+    try:
+        response = requests.get(
+            NEW_YORK_FED_SOFR_URL.format(start=start_date.isoformat(), end=end_date.isoformat()),
+            timeout=15,
+            headers=headers,
+        )
+        response.raise_for_status()
+        rows = []
+        for item in response.json().get('refRates', []):
+            try:
+                observation_day = date.fromisoformat(item['effectiveDate'])
+            except (KeyError, TypeError, ValueError):
+                continue
+            rate = _parse_rate(str(item.get('percentRate')))
+            if rate is None or not start_date <= observation_day <= end_date:
+                continue
+            rows.append({
+                'date': observation_day.isoformat(),
+                'rate': rate,
+                'source': 'New York Fed',
+            })
+        rows.sort(key=lambda item: item['date'])
+        if rows:
+            return rows
+    except (requests.RequestException, ValueError):
+        pass
+
+    response = requests.get(FRED_SOFR_URL, timeout=15, headers=headers)
+    response.raise_for_status()
+    rows = []
     reader = csv.DictReader(io.StringIO(response.text))
     for row in reader:
         record_date = row.get('observation_date') or row.get('DATE')
@@ -44,9 +76,8 @@ def fetch_historical_rates(start_date: date, end_date: date) -> List[dict]:
         rows.append({
             'date': observation_day.isoformat(),
             'rate': rate,
-            'source': 'New York Fed / FRED'
+            'source': 'New York Fed / FRED',
         })
-
     rows.sort(key=lambda item: item['date'])
     return rows
 

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import csv
-import io
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import List
+from urllib.parse import urlencode
 
 import requests
 
-SONIA_URLS = [
-    "https://fred.stlouisfed.org/graph/fredgraph.csv?id=IUDSOIA"]
+SONIA_URL = (
+    "https://www.bankofengland.co.uk/boeapps/database/"
+    "_iadb-fromshowcolumns.asp"
+)
+SONIA_SERIES_CODE = 'IUDSOIA'
 
 def _parse_rate(raw_value: str | None) -> float | None:
     if raw_value is None:
@@ -23,37 +25,56 @@ def _parse_rate(raw_value: str | None) -> float | None:
 
 
 def _try_candidate_urls(start_date: date, end_date: date) -> List[dict]:
-    for url_template in SONIA_URLS:
-        url = url_template.format(start=start_date.isoformat(), end=end_date.isoformat())
-        try:
-            response = requests.get(url, timeout=30, headers={'User-Agent': 'ARRA/1.0'})
-            if response.status_code >= 400:
-                continue
-            text = response.text.strip()
-            if not text or '\n' not in text:
-                continue
-            rows = list(csv.DictReader(io.StringIO(text)))
-            data = []
-            for row in rows:
-                record_date = row.get('observation_date') or row.get('date') or row.get('Date')
-                if not record_date:
-                    continue
-                try:
-                    observation_day = date.fromisoformat(record_date)
-                except ValueError:
-                    continue
-                if observation_day < start_date or observation_day > end_date:
-                    continue
-                rate = _parse_rate(row.get('IUDSOIA') or row.get('SONIA') or row.get('Value'))
-                if rate is None:
-                    continue
-                data.append({'date': observation_day.isoformat(), 'rate': rate, 'source': 'Bank of England'})
-            if data:
-                data.sort(key=lambda item: item['date'])
-                return data
-        except requests.RequestException:
+    query = urlencode({
+        'csv.x': 'yes',
+        'Datefrom': start_date.strftime('%d/%b/%Y'),
+        'Dateto': end_date.strftime('%d/%b/%Y'),
+        'SeriesCodes': SONIA_SERIES_CODE,
+        'CSVF': 'TN',
+        'UsingCodes': 'Y',
+        'VPD': 'Y',
+        'VFD': 'N',
+    })
+    response = requests.get(
+        f'{SONIA_URL}?{query}',
+        timeout=30,
+        headers={
+            'User-Agent': (
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+        },
+    )
+    response.raise_for_status()
+
+    text = response.text.strip()
+    if not text or 'DATE' not in text.upper() or '<html' in text.lower():
+        return []
+
+    data = []
+    lines = text.splitlines()
+    for line in lines[1:]:
+        columns = [column.strip().strip('"') for column in line.split(',')]
+        if len(columns) < 2:
             continue
-    return []
+        try:
+            observation_day = date.fromisoformat(columns[0])
+        except ValueError:
+            try:
+                observation_day = datetime.strptime(columns[0], '%d %b %Y').date()
+            except ValueError:
+                continue
+        if observation_day < start_date or observation_day > end_date:
+            continue
+        rate = _parse_rate(columns[1])
+        if rate is not None:
+            data.append({
+                'date': observation_day.isoformat(),
+                'rate': rate,
+                'source': 'Bank of England',
+            })
+    data.sort(key=lambda item: item['date'])
+    return data
 
 
 def fetch_historical_rates(start_date: date, end_date: date) -> List[dict]:
