@@ -68,6 +68,7 @@ def _fetch_reference_rates(reference_rate: str, start_date: date, end_date: date
 def _attach_rate_chart(result: dict, rate_history: List[dict], reference_rate: str,
                        start_date: date, end_date: date) -> dict:
     try:
+        print(f"Generating rate chart for {reference_rate} from {start_date} to {end_date} with {len(rate_history)} observations.")
         result['rate_chart'] = generate_rate_chart(
             rate_history,
             reference_rate,
