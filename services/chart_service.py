@@ -4,10 +4,13 @@ import base64
 from datetime import date
 from io import BytesIO
 from typing import List
+import os
 
+# Configure matplotlib for serverless environment
+os.environ['MPLBACKEND'] = 'Agg'
 import matplotlib
-
 matplotlib.use('Agg')
+matplotlib.rcParams['figure.max_open_warning'] = 0
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -50,9 +53,14 @@ def generate_rate_chart(
         axis.grid(True, color='#94A3B8', alpha=0.18, linewidth=0.7)
         for spine in axis.spines.values():
             spine.set_color('#475569')
+        
+        # Use simpler date formatting to avoid recursion issues
         axis.xaxis.set_major_locator(mdates.AutoDateLocator())
-        axis.xaxis.set_major_formatter(mdates.ConciseDateFormatter(axis.xaxis.get_major_locator()))
-        figure.autofmt_xdate()
+        axis.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        
+        # Rotate dates without using autofmt_xdate which can cause issues
+        plt.setp(axis.xaxis.get_majorticklabels(), rotation=45, ha='right')
+        
         figure.tight_layout()
 
         buffer = BytesIO()
