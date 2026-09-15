@@ -75,7 +75,12 @@ def _attach_rate_chart(result: dict, rate_history: List[dict], reference_rate: s
             start_date.isoformat(),
             end_date.isoformat(),
         )
-    except (ValueError, OSError, RuntimeError) as exc:
+    except Exception as exc:
+        import traceback
+
+        print("RATE CHART ERROR:")
+        traceback.print_exc()
+        
         result['rate_chart'] = None
         result['rate_chart_error'] = str(exc)
     return result
